@@ -3,8 +3,16 @@ END_LINE = 133905
 FILENAME = 'data/cmudict-0.7b'
 ALPHA = '_abcdefghijklmnopqrstuvwxyz'
 
+limit = {
+        'maxw'  : 16,
+        'minw'  : 5,
+        'maxph' : 16,
+        'minph' : 5
+        }
+
 import random
 import numpy as np
+import pickle
 
 
 '''
@@ -27,7 +35,7 @@ def split_data(lines):
     for line in lines:
         word, phonemes = line.split('  ')
         phoneme_lists.append(phonemes.split(' '))
-        words.append(word)
+        words.append(word.lower())
     return words, phoneme_lists
 
 
@@ -52,7 +60,7 @@ def index_phonemes(phoneme_lists):
     return tuple( idx2alpha, alpha2idx )
 
 '''
-def index_alphabets(alpha):
+def index_alphabets(alpha = ALPHA):
     idx2alpha = dict(enumerate(alpha))
     alpha2idx = dict(zip(idx2alpha.values(), idx2alpha.keys()))
     return idx2alpha, alpha2idx
@@ -67,15 +75,25 @@ def filter_data(words, phoneme_lists):
     # need a threshold
     #  say max : 16, 16
     #      min : 5, 5
-    maxw, minw = 16,5
-    maxph, minph = 16,5
+    '''
+        limit = {
+                'maxw'  : 16,
+                'minw'  : 5,
+                'maxph' : 16,
+                'minph' : 5
+                }
+    '''
+
+    # also make sure, every character in words is an alphabet
+    #  if not, skip the row
     filtered_words, filtered_phoneme_lists = [], []
     raw_data_len = len(words)
     for word, phonemes in zip(words, phoneme_lists):
-        if len(word) < maxw and len(word) > minw:
-            if len(phonemes) < maxph and len(phonemes) > minph:
-                filtered_words.append(word)
-                filtered_phoneme_lists.append(phonemes)
+        if word.isalpha():
+            if len(word) < limit['maxw'] and len(word) > limit['minw']:
+                if len(phonemes) < limit['maxph'] and len(phonemes) > limit['minph']:
+                    filtered_words.append(word)
+                    filtered_phoneme_lists.append(phonemes)
 
     # print the fraction of the original data, filtered
     filt_data_len = len(filtered_words)
@@ -92,9 +110,26 @@ def filter_data(words, phoneme_lists):
       return ( [array_words([indices]), array_phonemes([indices]) )
  
 '''
+def zero_pad(words, phoneme_lists, alpha2idx, pho2idx):
+    # num of rows
+    data_len = len(words)
+    idx_words = np.zeros([data_len, limit['maxw']], dtype=np.int32)
+    idx_phonemes = np.zeros([data_len, limit['maxph']], dtype=np.int32)
+
+    for i in range(data_len):
+        #print(words[i], phoneme_lists[i], i)
+        word_indices = [ alpha2idx[alpha] for alpha in words[i] ] \
+                            + [0]*(limit['maxw'] - len(words[i]))
+        pho_indices  = [ pho2idx[phoneme] for phoneme in phoneme_lists[i] ] \
+                            + [0]*(limit['maxph'] - len(phoneme_lists[i]))
+
+        idx_words[i] = np.array(word_indices)
+        idx_phonemes[i] = np.array(pho_indices)
+
+    return idx_words, idx_phonemes
 
 
-if __name__ == '__main__':
+def process_data():
 
     print('>> Read from file')
     lines = read_line()
@@ -103,6 +138,9 @@ if __name__ == '__main__':
     print(random.choice(lines))
 
     print('\n>> Separate data')
+    # shuffle data
+    random.shuffle(lines)
+    # separate into words and phoneme lists
     words, phoneme_lists = split_data(lines)
     print('\n:: random.choice(words)')
     print(random.choice(words))
@@ -120,21 +158,42 @@ if __name__ == '__main__':
     print(pho2idx[random.choice(list(pho2idx.keys()))])
     print(pho2idx[random.choice(list(pho2idx.keys()))])
 
+    # index alphabets
+    idx2alpha, alpha2idx = index_alphabets()
+
     print('\n>> Filter data')
     words, phoneme_lists = filter_data(words, phoneme_lists)
 
     # we know the maximum length of both sequences : 15
     #  we should create zero-padded numpy arrays
+    idx_words, idx_phonemes = zero_pad(words, phoneme_lists, alpha2idx, pho2idx)
+    # save them
+    np.save('idx_words.npy', idx_words)
+    np.save('idx_phonemes.npy', idx_phonemes)
+
+    # let us now save the necessary dictionaries
+    data_ctl = {
+            'idx2alpha' : idx2alpha,
+            'idx2pho' : idx2pho,
+            'pho2idx' : pho2idx,
+            'alpha2idx' : alpha2idx,
+            'limit' : limit
+                }
+    # write to disk : data control dictionaries
+    with open('data_ctl.pkl', 'wb') as f:
+        pickle.dump(data_ctl, f)
+
+
+def load_data():
+    # read data control dictionaries
+    with open('data_ctl.pkl', 'rb') as f:
+        data_ctl = pickle.load(f)
+    # read numpy arrays
+    idx_words = np.load('idx_words.npy')
+    idx_phonemes = np.load('idx_phonemes.npy')
+    return data_ctl, idx_words, idx_phonemes
 
 
 
-
-
-
-
-
-
-
-
-
-
+if __name__ == '__main__':
+    process_data()
