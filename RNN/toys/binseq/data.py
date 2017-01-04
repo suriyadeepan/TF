@@ -42,11 +42,10 @@ def gen_data(N= 1000000):
     X_int = list(range(N))
     X_bin = [ bin(x_int)[2:].zfill(seqlen) for x_int in X_int ]
     Y_int = [ x_bin.count('1') for x_bin in X_bin ]
-    Y_bin = [ bin(y_int)[2:].zfill(seqlen) for y_int in Y_int ]
 
     # convert strings to indices (0,1)
     X = np.array( [ [int(item) for item in x_bin ] for x_bin in X_bin ] )
-    Y = np.array( [ [int(item) for item in y_bin ] for y_bin in Y_bin ] )
+    Y = np.array(Y_int)
 
     return X, Y
 
