@@ -5,7 +5,7 @@ import sys
 
 class VanillaNet(object):
 
-    def __init__(self, timesteps, num_classes, 
+    def __init__(self, seqlen, num_classes, 
             state_size, batch_size, epochs, 
             learning_rate, 
             ckpt_path,
@@ -17,6 +17,7 @@ class VanillaNet(object):
         self.state_size = state_size
         self.ckpt_path = ckpt_path
         self.model_name = model_name
+        self.seqlen = seqlen
 
         # construct graph
         def __graph__():
@@ -24,17 +25,20 @@ class VanillaNet(object):
             tf.reset_default_graph()
 
             # placeholders
-            x = tf.placeholder(tf.int32, [batch_size, timesteps], name = 'x')
-            y = tf.placeholder(tf.int32, [batch_size, timesteps], name = 'x')
+            x_ = [ tf.placeholder(tf.int64, [None, ], 
+                name = 'x_{}'.format(t)) for t in range(seqlen) ]
+            y_ = [ tf.placeholder(tf.int64, [None, ], 
+                name = 'y_{}'.format(t)) for t in range(seqlen) ]
+
             # one-hot
-            x_onehot = tf.one_hot(x, num_classes) # [batch_size x timesteps x num_classes]
-            rnn_inputs = tf.unstack(x_onehot, axis=1) # [batch_size x num_classes]
+            x_onehot = [ tf.one_hot(x_i_, num_classes) for x_i_ in x_ ]
+
             # initial state of RNN
             init_state = tf.zeros([batch_size, state_size])
 
             # rnn cell
             cell = tf.nn.rnn_cell.BasicRNNCell(state_size)
-            rnn_outputs, final_state = tf.nn.rnn(cell, rnn_inputs, init_state)
+            rnn_outputs, final_state = tf.nn.rnn(cell, x_onehot, init_state)
 
             # parameters for softmax layer
             W = tf.get_variable('W', [state_size, num_classes])
@@ -42,32 +46,37 @@ class VanillaNet(object):
                     initializer=tf.constant_initializer(0.0))
 
             # output for each time step
-            logits = [tf.matmul(rnn_output, W) + b for rnn_output in rnn_outputs]
-            predictions = [tf.nn.softmax(logit) for logit in logits]
+            logits = [ tf.matmul(rnn_output, W) + b for rnn_output in rnn_outputs ]
+            predictions = [ tf.nn.softmax(logit) for logit in logits ]
 
-            # unpack y
-            #y_as_list = tf.unpack(y, axis=1)
-            y_as_list = [tf.squeeze(i, squeeze_dims=[1]) for i in tf.split(1, timesteps, y)]
             # loss
-            loss_weights = [ tf.ones([batch_size]) for i in range(timesteps) ]
-            losses = tf.nn.seq2seq.sequence_loss_by_example(logits, y_as_list, loss_weights)
-            avg_loss = tf.reduce_mean(losses)
+            loss_weights = [ tf.ones([batch_size]) for t in range(seqlen) ]
+            losses = tf.nn.seq2seq.sequence_loss_by_example(logits, y_, loss_weights)
+            loss = tf.reduce_mean(losses)
 
             # train op
-            train_op = tf.train.AdagradOptimizer(learning_rate).minimize(avg_loss)
+            train_op = tf.train.AdagradOptimizer(learning_rate).minimize(loss)
 
             # attach symbols to object, to expose to user of class
-            self.x = x
-            self.y = y
+            self.x = x_
+            self.y = y_
             self.init_state = init_state
             self.train_op = train_op
-            self.loss = avg_loss
+            self.loss = loss
             self.predictions = predictions
 
         # run build graph
         sys.stdout.write('<log> Building Graph...')
         __graph__()
         sys.stdout.write('</log>\n')
+
+
+    def get_feed(self, x, y):
+        feed_dict = { x_i_ : x_i for x_i_, x_i in zip(self.x, x) }
+        feed_dict.update( { y_i_ : y_i for y_i_, y_i in zip(self.y, y) } )
+        feed_dict[self.init_state] = np.zeros([self.batch_size, self.state_size])
+        return feed_dict
+
 
     def train(self, train_set, sess=None, step=0):
 
@@ -77,28 +86,20 @@ class VanillaNet(object):
             sess = tf.Session()
             sess.run(tf.global_variables_initializer())
 
-        train_losses = []
         train_loss = 0
         for i in range(step, self.epochs):
             try:
-                train_init_state = np.zeros([self.batch_size, self.state_size])
                 # get batches
                 batchX, batchY = train_set.__next__()
                 # run train op
-                _, train_loss_, pred_ = sess.run([self.train_op, self.loss, self.predictions], \
-                        feed_dict = { self.x : batchX, 
-                            self.y : batchY,
-                            self.init_state : train_init_state })
+                _, train_loss_ = sess.run([self.train_op, self.loss], 
+                        feed_dict=self.get_feed(batchX, batchY) )
 
-                #print('predicted : {}'.format(np.argmax(pred_[0], axis=1)))
-                #print('actual    : {}'.format(batchY))
-                    
                 # append to losses
                 train_loss += train_loss_
                 if i and i % 1000 == 0:
                     print('\n>> Average train loss : {}'.format(train_loss/1000))
                     # append avg loss to list
-                    train_losses.append(train_loss/1000)
                     train_loss = 0
 
                     # save model to disk
@@ -106,9 +107,9 @@ class VanillaNet(object):
             except KeyboardInterrupt:
                 print('\n>> Interrupted by user at iteration #' + str(i))
                 self.session = sess
-                return sess, (i//1000)*1000, train_losses
+                return sess, (i//1000)*1000
 
-        return sess, i, train_losses
+        return sess, i
 
 
     def restore_last_session(self):
@@ -122,5 +123,19 @@ class VanillaNet(object):
             saver.restore(sess, ckpt.model_checkpoint_path)
         # return to user
         return sess
+
+
+    def predict(self, sess, X):
+        feed_dict = { self.x[t]: X[t] for t in range(self.seqlen) }
+        feed_dict[self.init_state] = np.zeros([self.batch_size, self.state_size])
+        predv = sess.run(self.predictions, feed_dict)
+        # dec_op_v is a list; also need to transpose 0,1 indices 
+        #  (interchange batch_size and timesteps dimensions
+        predv = np.array(predv).transpose([1,0,2])
+        # return the index of item with highest probability
+        return np.argmax(predv, axis=2)
+
+
+
 
 
