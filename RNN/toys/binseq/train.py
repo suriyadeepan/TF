@@ -6,17 +6,17 @@ if __name__ == '__main__':
     X, Y = data.gen_data()
 
     # hyper-parameters
-    timesteps = X.shape[-1]
-    num_classes = 2 # binary
-    state_size = 10 # num of units in rnn's internal state
-    batch_size = 16
+    seqlen = X.shape[-1]
+    num_classes = 20 # binary
+    state_size = 16  # num of units in rnn's internal state
+    batch_size = 128
     epochs = 100000 # 100_000 (need this <- python 3.6)
     learning_rate = 0.1
 
 
     # build model
-    net = model.VanillaNet(
-            timesteps=timesteps,
+    net = model.ManyToOne(
+            seqlen = seqlen,
             num_classes = num_classes,
             state_size = state_size,
             batch_size = batch_size,

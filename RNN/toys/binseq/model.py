@@ -172,7 +172,7 @@ class ManyToOne(object):
             x_onehot = [ tf.one_hot(x_i_, num_classes) for x_i_ in x_ ]
 
             # initial state of RNN
-            init_state = tf.zeros([batch_size, state_size])
+            init_state = tf.zeros([self.batch_size, state_size])
 
             # rnn cell
             cell = tf.nn.rnn_cell.BasicRNNCell(state_size)

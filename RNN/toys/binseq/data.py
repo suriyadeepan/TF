@@ -30,12 +30,6 @@ def gen_data(size=1000000, timesteps=10):
 
 '''
 
-def encode(n, seqlen):
-    return bin(n)[2:].zfill(seqlen)
-
-def decode(n):
-    return int(n,2)
-
 def gen_data(N= 1000000):
     # generate dataset
     seqlen = len(bin(N)[2:])
