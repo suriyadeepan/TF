@@ -1,5 +1,5 @@
 import numpy as np
-from random import sample
+from random import sample, shuffle
 
 '''
  We are gonna generate a dataset - a binary sequence
@@ -37,6 +37,11 @@ def gen_data(N= 1000000):
     X_bin = [ bin(x_int)[2:].zfill(seqlen) for x_int in X_int ]
     Y_int = [ x_bin.count('1') for x_bin in X_bin ]
 
+    # shuffle
+    data = list(zip(X_bin, Y_int))
+    shuffle(data)
+    X_bin, Y_int = zip(*data)
+
     # convert strings to indices (0,1)
     X = np.array( [ [int(item) for item in x_bin ] for x_bin in X_bin ] )
     Y = np.array(Y_int)
@@ -46,4 +51,4 @@ def gen_data(N= 1000000):
 def rand_batch_gen(x, y, batch_size):
     while True:
         sample_idx = sample(list(np.arange(len(x))), batch_size)
-        yield x[sample_idx].T, y[sample_idx].T
+        yield x[sample_idx], y[sample_idx]
