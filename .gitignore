@@ -1,3 +1,7 @@
 *.ipynb_checkpoints
 *MNIST_data
 *.pyc
+ignore
+__pycache__
+*.npy
+*.pkl
